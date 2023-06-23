@@ -1,7 +1,7 @@
 package main
 
 /*
- * ZLint Copyright 2023 Regents of the University of Michigan
+ * ZLint Copyright 2021 Regents of the University of Michigan
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not
  * use this file except in compliance with the License. You may obtain a copy
@@ -28,8 +28,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/zmap/zlint/v3/util"
-
+	"github.com/zmap/zcrypto/encoding/asn1"
 	"github.com/zmap/zcrypto/x509"
 	"github.com/zmap/zcrypto/x509/pkix"
 )
@@ -76,6 +75,25 @@ func main() {
 // basic constraints are defined. Please do not think that this will be
 // acceptable to any system, let alone lint particularly well.
 func newLeaf(trustAnchor *Certificate, intermediates []*Certificate) (*Certificate, error) {
+	innerOtherName, err := asn1.Marshal(asn1.RawValue{
+		Tag:   asn1.TagUTF8String,
+		Bytes: []byte("this value does not match the common name"),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal innerOtherName: %v", err)
+	}
+
+	idOnSMTPUTF8MailboxOID := asn1.ObjectIdentifier{1, 3, 6, 1, 5, 5, 7, 8, 9}
+	otherName := pkix.OtherName{
+		TypeID: idOnSMTPUTF8MailboxOID,
+		Value: asn1.RawValue{
+			Class:      asn1.ClassContextSpecific,
+			Tag:        0,
+			IsCompound: true,
+			Bytes:      innerOtherName,
+		},
+	}
+
 	var parent *Certificate
 	if len(intermediates) == 0 {
 		parent = trustAnchor
@@ -84,20 +102,22 @@ func newLeaf(trustAnchor *Certificate, intermediates []*Certificate) (*Certifica
 	}
 	// Edit this template to look like whatever leaf cert you need.
 	template := x509.Certificate{
-		Raw:                         nil,
-		RawTBSCertificate:           nil,
-		RawSubjectPublicKeyInfo:     nil,
-		RawSubject:                  nil,
-		RawIssuer:                   nil,
-		Signature:                   nil,
-		SignatureAlgorithm:          0,
-		PublicKeyAlgorithm:          0,
-		PublicKey:                   nil,
-		Version:                     0,
-		SerialNumber:                nextSerial(),
-		Issuer:                      pkix.Name{},
-		Subject:                     pkix.Name{},
-		NotBefore:                   util.RFC5280Date,
+		Raw:                     nil,
+		RawTBSCertificate:       nil,
+		RawSubjectPublicKeyInfo: nil,
+		RawSubject:              nil,
+		RawIssuer:               nil,
+		Signature:               nil,
+		SignatureAlgorithm:      0,
+		PublicKeyAlgorithm:      0,
+		PublicKey:               nil,
+		Version:                 0,
+		SerialNumber:            nextSerial(),
+		Issuer:                  pkix.Name{},
+		Subject: pkix.Name{
+			CommonName: "test@example.com",
+		},
+		NotBefore:                   time.Date(2023, time.September, 1, 0, 0, 0, 0, time.UTC),
 		NotAfter:                    time.Date(9999, 0, 0, 0, 0, 0, 0, time.UTC),
 		KeyUsage:                    0,
 		Extensions:                  nil,
@@ -114,14 +134,44 @@ func newLeaf(trustAnchor *Certificate, intermediates []*Certificate) (*Certifica
 		OCSPServer:                  nil,
 		IssuingCertificateURL:       nil,
 		DNSNames:                    nil,
-		EmailAddresses:              nil,
-		IPAddresses:                 nil,
-		URIs:                        nil,
-		PermittedEmailAddresses:     nil,
-		ExcludedEmailAddresses:      nil,
-		CRLDistributionPoints:       nil,
-		PolicyIdentifiers:           nil,
+		EmailAddresses:              []string{"test@example.com"},
+		//OtherNames:                  otherNames,
+		IPAddresses:             nil,
+		URIs:                    nil,
+		PermittedEmailAddresses: nil,
+		ExcludedEmailAddresses:  nil,
+		CRLDistributionPoints:   nil,
+		PolicyIdentifiers:       []asn1.ObjectIdentifier{{2, 23, 140, 1, 5, 1, 1}},
 	}
+
+	otherNameRaw, err := asn1.MarshalWithParams(otherName, "tag:0")
+	if err != nil {
+		return nil, fmt.Errorf("gsx509: SAN error marshaling otherName: %v", err)
+	}
+
+	rawValues := []asn1.RawValue{
+		{
+			FullBytes: otherNameRaw,
+		},
+	}
+
+	rawBytes, err := asn1.Marshal(rawValues)
+	if err != nil {
+		return nil, err
+	}
+
+	oidSAN := asn1.ObjectIdentifier{2, 5, 29, 17}
+
+	sansExtension := pkix.Extension{
+		Id:       oidSAN,
+		Critical: true,
+		Value:    rawBytes,
+	}
+
+	_ = sansExtension
+
+	template.ExtraExtensions = append(template.ExtraExtensions, sansExtension)
+
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return nil, err
@@ -272,34 +322,36 @@ func newIntermediate(parent *Certificate) (*Certificate, error) {
 // Formats the given certificate into OpenSSL's textual output. For example:
 //
 // Certificate:
-//    Data:
-//        Version: 3 (0x2)
-//        Serial Number: 1 (0x1)
-//        Signature Algorithm: ecdsa-with-SHA256
-//        Issuer:
-//        Validity
-//            Not Before: Feb 14 17:21:17 2021 GMT
-//            Not After : Feb 14 17:21:17 2021 GMT
-//        Subject:
-//        Subject Public Key Info:
-//            Public Key Algorithm: id-ecPublicKey
-//                Public-Key: (256 bit)
-//                pub:
-//                    04:76:2b:19:b8:b4:f4:d9:9e:66:8a:6a:f3:bf:c5:
-//                    df:83:43:d6:53:bf:9e:5a:b8:b1:5d:99:8c:4e:d7:
-//                    59:25:fd:5c:08:16:23:19:61:c4:cc:c2:f7:db:ac:
-//                    72:a5:5e:65:35:f3:64:e2:9b:af:f9:04:c9:99:61:
-//                    57:3e:ee:9c:b3
-//                ASN1 OID: prime256v1
-//                NIST CURVE: P-256
-//        X509v3 extensions:
-//            X509v3 Subject Key Identifier:
-//                6E:3F:50:3A:07:4E:10:AA:74:31:8F:3B:B3:4F:30:96:D3:6F:EF:AE
-//    Signature Algorithm: ecdsa-with-SHA256
-//         30:44:02:20:11:3f:4a:25:63:10:fa:2d:96:00:e8:23:8c:62:
-//         40:c4:8d:31:31:d0:96:f2:7d:28:34:3a:2c:23:9f:bb:28:7e:
-//         02:20:1b:8a:68:6d:ef:c4:d7:19:46:48:bf:b0:18:85:31:37:
-//         ce:2f:04:27:7c:a3:d2:47:4d:e1:1f:c3:1a:3e:e3:8f
+//
+//	Data:
+//	    Version: 3 (0x2)
+//	    Serial Number: 1 (0x1)
+//	    Signature Algorithm: ecdsa-with-SHA256
+//	    Issuer:
+//	    Validity
+//	        Not Before: Feb 14 17:21:17 2021 GMT
+//	        Not After : Feb 14 17:21:17 2021 GMT
+//	    Subject:
+//	    Subject Public Key Info:
+//	        Public Key Algorithm: id-ecPublicKey
+//	            Public-Key: (256 bit)
+//	            pub:
+//	                04:76:2b:19:b8:b4:f4:d9:9e:66:8a:6a:f3:bf:c5:
+//	                df:83:43:d6:53:bf:9e:5a:b8:b1:5d:99:8c:4e:d7:
+//	                59:25:fd:5c:08:16:23:19:61:c4:cc:c2:f7:db:ac:
+//	                72:a5:5e:65:35:f3:64:e2:9b:af:f9:04:c9:99:61:
+//	                57:3e:ee:9c:b3
+//	            ASN1 OID: prime256v1
+//	            NIST CURVE: P-256
+//	    X509v3 extensions:
+//	        X509v3 Subject Key Identifier:
+//	            6E:3F:50:3A:07:4E:10:AA:74:31:8F:3B:B3:4F:30:96:D3:6F:EF:AE
+//	Signature Algorithm: ecdsa-with-SHA256
+//	     30:44:02:20:11:3f:4a:25:63:10:fa:2d:96:00:e8:23:8c:62:
+//	     40:c4:8d:31:31:d0:96:f2:7d:28:34:3a:2c:23:9f:bb:28:7e:
+//	     02:20:1b:8a:68:6d:ef:c4:d7:19:46:48:bf:b0:18:85:31:37:
+//	     ce:2f:04:27:7c:a3:d2:47:4d:e1:1f:c3:1a:3e:e3:8f
+//
 // -----BEGIN CERTIFICATE-----
 // MIIBDjCBtqADAgECAgEBMAoGCCqGSM49BAMCMAAwHhcNMjEwMjE0MTcyMTE3WhcN
 // MjEwMjE0MTcyMTE3WjAAMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEdisZuLT0
