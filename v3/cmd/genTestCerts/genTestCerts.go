@@ -1,7 +1,7 @@
 package main
 
 /*
- * ZLint Copyright 2024 Regents of the University of Michigan
+ * ZLint Copyright 2021 Regents of the University of Michigan
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not
  * use this file except in compliance with the License. You may obtain a copy
@@ -15,21 +15,23 @@ package main
  */
 
 import (
-	"crypto/ecdsa"
-	"crypto/elliptic"
+
+	// "crypto/ecdsa"
+	// "crypto/elliptic"
 	"crypto/rand"
+	"crypto/rsa"
 	"encoding/pem"
 	"fmt"
-	"io/ioutil"
 	"math/big"
 	"os/exec"
-	"path"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/zmap/zlint/v3/util"
+	"github.com/zmap/zcrypto/encoding/asn1"
+	"golang.org/x/crypto/cryptobyte"
 
+	//"github.com/zmap/zlint/v3/util"
 	"github.com/zmap/zcrypto/x509"
 	"github.com/zmap/zcrypto/x509/pkix"
 )
@@ -37,21 +39,23 @@ import (
 // Generates a CA, an intermediate, and a leaf certificate and prints their
 // OpenSSL textual output to stdout.
 func main() {
+
 	ca, err := newTrustAnchor()
 	if err != nil {
 		panic(err)
 	}
-	printCertificate(ca, "Trust Anchor")
+	// printCertificate(ca, "Trust Anchor")
 	intermediate, err := newIntermediate(ca)
 	if err != nil {
 		panic(err)
 	}
 	printCertificate(intermediate, "Intermediate")
-	leaf, err := newLeaf(ca, []*Certificate{intermediate})
-	if err != nil {
-		panic(err)
-	}
-	printCertificate(leaf, "Leaf")
+
+	// leaf, err := newLeaf(ca, []*Certificate{intermediate})
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// printCertificate(leaf, "Leaf")
 	// The following snippets will automatically save the generated certificates to
 	// v3/testdata under the provided filename. As that directory is rather large
 	// and somewhat unwieldy to navigate, this greatly helps accelerate testdata
@@ -75,71 +79,84 @@ func main() {
 // more than a self signed certificate with IsCA set to false. Not even any
 // basic constraints are defined. Please do not think that this will be
 // acceptable to any system, let alone lint particularly well.
-func newLeaf(trustAnchor *Certificate, intermediates []*Certificate) (*Certificate, error) {
-	var parent *Certificate
-	if len(intermediates) == 0 {
-		parent = trustAnchor
-	} else {
-		parent = intermediates[len(intermediates)-1]
-	}
-	// Edit this template to look like whatever leaf cert you need.
-	template := x509.Certificate{
-		Raw:                         nil,
-		RawTBSCertificate:           nil,
-		RawSubjectPublicKeyInfo:     nil,
-		RawSubject:                  nil,
-		RawIssuer:                   nil,
-		Signature:                   nil,
-		SignatureAlgorithm:          0,
-		PublicKeyAlgorithm:          0,
-		PublicKey:                   nil,
-		Version:                     0,
-		SerialNumber:                nextSerial(),
-		Issuer:                      pkix.Name{},
-		Subject:                     pkix.Name{},
-		NotBefore:                   util.RFC5280Date,
-		NotAfter:                    time.Date(9999, 0, 0, 0, 0, 0, 0, time.UTC),
-		KeyUsage:                    0,
-		Extensions:                  nil,
-		ExtraExtensions:             nil,
-		UnhandledCriticalExtensions: nil,
-		ExtKeyUsage:                 nil,
-		UnknownExtKeyUsage:          nil,
-		BasicConstraintsValid:       false,
-		IsCA:                        false,
-		MaxPathLen:                  0,
-		MaxPathLenZero:              false,
-		SubjectKeyId:                nil,
-		AuthorityKeyId:              nil,
-		OCSPServer:                  nil,
-		IssuingCertificateURL:       nil,
-		DNSNames:                    nil,
-		EmailAddresses:              nil,
-		IPAddresses:                 nil,
-		URIs:                        nil,
-		PermittedEmailAddresses:     nil,
-		ExcludedEmailAddresses:      nil,
-		CRLDistributionPoints:       nil,
-		PolicyIdentifiers:           nil,
-	}
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		return nil, err
-	}
-	cert, err := x509.CreateCertificate(rand.Reader, &template, parent.Certificate, key.Public(), parent.private)
-	if err != nil {
-		return nil, err
-	}
-	c, err := x509.ParseCertificate(cert)
-	if err != nil {
-		return nil, err
-	}
-	return &Certificate{
-		Certificate: c,
-		public:      key.Public(),
-		private:     key,
-	}, nil
-}
+// func newLeaf(trustAnchor *Certificate, intermediates []*Certificate) (*Certificate, error) {
+// 	var parent *Certificate
+// 	if len(intermediates) == 0 {
+// 		parent = trustAnchor
+// 	} else {
+// 		parent = intermediates[len(intermediates)-1]
+// 	}
+// 	// Edit this template to look like whatever leaf cert you need.
+// 	template := x509.Certificate{
+// 		Raw:                     nil,
+// 		RawTBSCertificate:       nil,
+// 		RawSubjectPublicKeyInfo: nil,
+// 		RawSubject:              nil,
+// 		RawIssuer:               nil,
+// 		Signature:               nil,
+// 		SignatureAlgorithm:      0,
+// 		PublicKeyAlgorithm:      3,
+// 		PublicKey:               nil,
+// 		Version:                 0,
+// 		SerialNumber:            nextSerial(),
+// 		Issuer:                  pkix.Name{},
+// 		Subject: pkix.Name{
+// 			CommonName:           "common_name",
+// 			Country:              []string{"GB"},
+// 			Locality:             []string{"locality"},
+// 			PostalCode:           []string{"postalCode"},
+// 			StreetAddress:        []string{"StreetAddress"},
+// 			Organization:         []string{"Organization"},
+// 			OrganizationalUnit:   []string{"OrganizationalUnit"},
+// 			JurisdictionCountry:  []string{"GB"},
+// 			JurisdictionLocality: []string{"JurisdictionLocality"},
+// 			Surname:              []string{"Surname"},
+// 			GivenName:            []string{"GivenName"},
+// 			SerialNumber:         "SerialNumber",
+// 		},
+// 		NotBefore:                   time.Date(9999, 0, 0, 0, 0, 0, 0, time.UTC), // util.RFC5280Date,
+// 		NotAfter:                    time.Date(9999, 0, 0, 0, 0, 0, 0, time.UTC),
+// 		KeyUsage:                    nil,
+// 		Extensions:                  nil,
+// 		ExtraExtensions:             nil,
+// 		UnhandledCriticalExtensions: nil,
+// 		ExtKeyUsage:                 nil,
+// 		UnknownExtKeyUsage:          []asn1.ObjectIdentifier{1, 3, 6, 1, 5, 5, 7, 3, 31},
+// 		BasicConstraintsValid:       false,
+// 		IsCA:                        false,
+// 		MaxPathLen:                  0,
+// 		MaxPathLenZero:              false,
+// 		SubjectKeyId:                nil,
+// 		AuthorityKeyId:              nil,
+// 		OCSPServer:                  nil,
+// 		IssuingCertificateURL:       nil,
+// 		DNSNames:                    nil,
+// 		EmailAddresses:              nil,
+// 		IPAddresses:                 nil,
+// 		URIs:                        nil,
+// 		PermittedEmailAddresses:     nil,
+// 		ExcludedEmailAddresses:      nil,
+// 		CRLDistributionPoints:       nil,
+// 		PolicyIdentifiers:           []asn1.ObjectIdentifier{{2, 23, 140, 1, 1}},
+// 	}
+// 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	cert, err := x509.CreateCertificate(rand.Reader, &template, parent.Certificate, key.Public(), parent.private)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	c, err := x509.ParseCertificate(cert)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	return &Certificate{
+// 		Certificate: c,
+// 		public:      key.Public(),
+// 		private:     key,
+// 	}, nil
+// }
 
 // This is NOT a healthy example of a CA certificate, this is nothing
 // more than a self signed certificate with IsCA set to true. Not even any
@@ -170,7 +187,7 @@ func newTrustAnchor() (*Certificate, error) {
 		ExtKeyUsage:                 nil,
 		UnknownExtKeyUsage:          nil,
 		BasicConstraintsValid:       true,
-		IsCA:                        true,
+		IsCA:                        false,
 		MaxPathLen:                  0,
 		MaxPathLenZero:              false,
 		SubjectKeyId:                nil,
@@ -186,7 +203,7 @@ func newTrustAnchor() (*Certificate, error) {
 		CRLDistributionPoints:       nil,
 		PolicyIdentifiers:           nil,
 	}
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		return nil, err
 	}
@@ -212,29 +229,31 @@ func newTrustAnchor() (*Certificate, error) {
 func newIntermediate(parent *Certificate) (*Certificate, error) {
 	// Edit this template to look like whatever intermediate you need.
 	template := x509.Certificate{
-		Raw:                         nil,
-		RawTBSCertificate:           nil,
-		RawSubjectPublicKeyInfo:     nil,
-		RawSubject:                  nil,
-		RawIssuer:                   nil,
-		Signature:                   nil,
-		SignatureAlgorithm:          0,
-		PublicKeyAlgorithm:          0,
-		PublicKey:                   nil,
-		Version:                     0,
-		SerialNumber:                nextSerial(),
-		Issuer:                      pkix.Name{},
-		Subject:                     pkix.Name{},
-		NotBefore:                   time.Time{},
-		NotAfter:                    time.Date(9999, 0, 0, 0, 0, 0, 0, time.UTC),
-		KeyUsage:                    0,
-		Extensions:                  nil,
-		ExtraExtensions:             nil,
+		Raw:                     nil,
+		RawTBSCertificate:       nil,
+		RawSubjectPublicKeyInfo: nil,
+		RawSubject:              nil,
+		RawIssuer:               nil,
+		Signature:               nil,
+		SignatureAlgorithm:      0,
+		PublicKeyAlgorithm:      0,
+		PublicKey:               nil,
+		Version:                 0,
+		SerialNumber:            nextSerial(),
+		Issuer:                  pkix.Name{},
+		Subject:                 pkix.Name{},
+		NotBefore:               time.Time{},
+		NotAfter:                time.Date(9999, 0, 0, 0, 0, 0, 0, time.UTC),
+		KeyUsage:                x509.KeyUsageDataEncipherment,
+		Extensions:              nil,
+		ExtraExtensions: []pkix.Extension{
+			{asn1.ObjectIdentifier{1, 3, 6, 1, 5, 5, 7, 1, 12}, false, encodeASN1()},
+		},
 		UnhandledCriticalExtensions: nil,
 		ExtKeyUsage:                 nil,
 		UnknownExtKeyUsage:          nil,
 		BasicConstraintsValid:       true,
-		IsCA:                        true,
+		IsCA:                        false,
 		MaxPathLen:                  0,
 		MaxPathLenZero:              false,
 		SubjectKeyId:                nil,
@@ -248,9 +267,9 @@ func newIntermediate(parent *Certificate) (*Certificate, error) {
 		PermittedEmailAddresses:     nil,
 		ExcludedEmailAddresses:      nil,
 		CRLDistributionPoints:       nil,
-		PolicyIdentifiers:           nil,
+		PolicyIdentifiers:           []asn1.ObjectIdentifier{{1, 3, 6, 1, 4, 1, 53087, 1, 1}},
 	}
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		return nil, err
 	}
@@ -262,6 +281,7 @@ func newIntermediate(parent *Certificate) (*Certificate, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return &Certificate{
 		Certificate: c,
 		public:      key.Public(),
@@ -269,50 +289,23 @@ func newIntermediate(parent *Certificate) (*Certificate, error) {
 	}, nil
 }
 
-// Formats the given certificate into OpenSSL's textual output. For example:
-//
-// Certificate:
-//
-//	Data:
-//	    Version: 3 (0x2)
-//	    Serial Number: 1 (0x1)
-//	    Signature Algorithm: ecdsa-with-SHA256
-//	    Issuer:
-//	    Validity
-//	        Not Before: Feb 14 17:21:17 2021 GMT
-//	        Not After : Feb 14 17:21:17 2021 GMT
-//	    Subject:
-//	    Subject Public Key Info:
-//	        Public Key Algorithm: id-ecPublicKey
-//	            Public-Key: (256 bit)
-//	            pub:
-//	                04:76:2b:19:b8:b4:f4:d9:9e:66:8a:6a:f3:bf:c5:
-//	                df:83:43:d6:53:bf:9e:5a:b8:b1:5d:99:8c:4e:d7:
-//	                59:25:fd:5c:08:16:23:19:61:c4:cc:c2:f7:db:ac:
-//	                72:a5:5e:65:35:f3:64:e2:9b:af:f9:04:c9:99:61:
-//	                57:3e:ee:9c:b3
-//	            ASN1 OID: prime256v1
-//	            NIST CURVE: P-256
-//	    X509v3 extensions:
-//	        X509v3 Subject Key Identifier:
-//	            6E:3F:50:3A:07:4E:10:AA:74:31:8F:3B:B3:4F:30:96:D3:6F:EF:AE
-//	Signature Algorithm: ecdsa-with-SHA256
-//	     30:44:02:20:11:3f:4a:25:63:10:fa:2d:96:00:e8:23:8c:62:
-//	     40:c4:8d:31:31:d0:96:f2:7d:28:34:3a:2c:23:9f:bb:28:7e:
-//	     02:20:1b:8a:68:6d:ef:c4:d7:19:46:48:bf:b0:18:85:31:37:
-//	     ce:2f:04:27:7c:a3:d2:47:4d:e1:1f:c3:1a:3e:e3:8f
-//
-// -----BEGIN CERTIFICATE-----
-// MIIBDjCBtqADAgECAgEBMAoGCCqGSM49BAMCMAAwHhcNMjEwMjE0MTcyMTE3WhcN
-// MjEwMjE0MTcyMTE3WjAAMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEdisZuLT0
-// 2Z5mimrzv8Xfg0PWU7+eWrixXZmMTtdZJf1cCBYjGWHEzML326xypV5lNfNk4puv
-// +QTJmWFXPu6cs6MhMB8wHQYDVR0OBBYEFG4/UDoHThCqdDGPO7NPMJbTb++uMAoG
-// CCqGSM49BAMCA0cAMEQCIBE/SiVjEPotlgDoI4xiQMSNMTHQlvJ9KDQ6LCOfuyh+
-// AiAbimht78TXGUZIv7AYhTE3zi8EJ3yj0kdN4R/DGj7jjw==
-// -----END CERTIFICATE-----
-//
-// Requires a copy of openssl in $PATH as it is simply making a
-// subprocess call out to it.
+type Marshallable interface {
+	Marshal(*cryptobyte.Builder, int) error
+}
+
+func marshallInnerTypeWithTag(data Marshallable, childTag int) ([]byte, error) {
+	var err error
+	var bytes []byte
+	var builder cryptobyte.Builder
+	if err = data.Marshal(&builder, childTag); err != nil {
+		return nil, err
+	}
+	if bytes, err = builder.Bytes(); err != nil {
+		return nil, err
+	}
+	return bytes, nil
+}
+
 func openSSLFormatCertificate(cert *Certificate) (string, error) {
 	block := pem.EncodeToMemory(&pem.Block{
 		Type:  "CERTIFICATE",
@@ -340,33 +333,10 @@ var nextSerial = func() func() *big.Int {
 	}
 }()
 
-// Uncomment this and use it if you would like to have random serial numbers.
-//
-//	// nextRandomSerial randomly generates a single serial number. Serial
-//	// numbers generated by sequential calls to this function will be related
-//	// to each other in any way.
-//	func nextRandomSerial() *big.Int {
-//		serial, err := rand.Int(rand.Reader, big.NewInt(int64(math.Pow(2, 160))))
-//		if err != nil {
-//			panic(err)
-//		}
-//		return serial
-//	}
-
 type Certificate struct {
 	*x509.Certificate
 	public  interface{}
 	private interface{}
-}
-
-func getGitRoot() (string, error) {
-	root, err := exec.Command("git", "rev-parse", "--show-toplevel").CombinedOutput()
-	return strings.Trim(string(root), " \n"), err
-}
-
-func getTestDataDir() (string, error) {
-	root, err := getGitRoot()
-	return path.Join(root, "v3", "testdata"), err
 }
 
 func printCertificate(certificate *Certificate, header string) {
@@ -376,17 +346,4 @@ func printCertificate(certificate *Certificate, header string) {
 	}
 	fmt.Printf("-------------%s-------------\n", header)
 	fmt.Println(fmted)
-}
-
-func saveCertificateToTestdata(certificate *Certificate, name string) (string, error) {
-	testData, err := getTestDataDir()
-	if err != nil {
-		return "", err
-	}
-	certData, err := openSSLFormatCertificate(certificate)
-	if err != nil {
-		return "", err
-	}
-	fname := path.Join(testData, name)
-	return fname, ioutil.WriteFile(fname, []byte(certData), 0664)
 }
