@@ -4,7 +4,7 @@ var svgImage = `<?xml version="1.0" encoding="utf-8"?>
 <!-- Generator: Adobe Illustrator 25.2.3, SVG Export Plug-In . SVG Version: 6.00 Build 0)  -->
 <svg version="1.2" baseProfile="tiny-ps" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 360.1 360.1" xmlns="http://www.w3.org/2000/svg">
   <title>Liberty Pumps, Inc</title>
-  <SCRiPT >Liberty Pumps, Inc</SCRiPT>
+  <!-- <SCRiPT >Liberty Pumps, Inc</SCRiPT> -->
   <desc>Description</desc>
   <rect fill="#FFFFFF" width="360.1" height="360.1" />
   <g id="Stacked">
